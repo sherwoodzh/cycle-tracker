@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PMD Peace Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.0.1"></script>
+    <style>
+        :root { 
+            --lavender: #E6E6FA; --deep-lavender: #967bb6;
+            --emerald: #2E7D32; --royal-purple: #673AB7; 
+            --text: #333; --bg: #FDFCFE; --danger: #c62828;
+        }
+        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+        .container { max-width: 450px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid var(--lavender); }
+        h1 { font-size: 1.3rem; color: var(--deep-lavender); margin-bottom: 5px; }
+        
+        .slider-container { background: #fafafa; border-radius: 18px; padding: 15px; margin-bottom: 12px; border: 1px solid #eee; }
+        input[type="range"] { width: 100%; -webkit-appearance: none; background: var(--lavender); height: 8px; border-radius: 5px; outline: none; margin: 15px 0; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; background: white; border: 3px solid var(--deep-lavender); border-radius: 50%; cursor: pointer; }
+
+        .ticks { display: flex; justify-content: space-between; padding: 0 5px; margin-top: -10px; pointer-events: none; }
+        .ticks span { width: 1px; height: 5px; background: #bbb; }
+        .scale-ref { display: flex; justify-content: space-between; font-size: 0.7rem; color: #999; margin-top: 5px; font-weight: bold; }
+
+        button { width: 100%; padding: 16px; border: none; border-radius: 16px; font-weight: 700; cursor: pointer; transition: 0.3s; margin-top: 10px; }
+        .btn-save { background: var(--deep-lavender); color: white; }
+        .btn-toggle { background: transparent; color: var(--deep-lavender); border: 1px solid var(--lavender); }
+        .btn-util { background: #f0f0f0; color: #666; font-size: 0.8rem; padding: 10px; border-radius: 12px; }
+        .btn-danger { color: var(--danger); font-size: 0.8rem; background: none; border: 1px solid #f8d7da; border-radius: 12px; margin-top: 20px; }
+        
+        #trends-view, #report-view { display: none; }
+        .heatmap-container { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
+        .heat-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 10px; }
+        .heat-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+        .heat-cell { width: 100%; aspect-ratio: 1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: bold; color: #333; border: 1px solid #eee; }
+        .phase-line { width: 100%; height: 4px; border-radius: 2px; }
+        .report-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin: 20px 0; }
+        .report-table th, .report-table td { border: 1px solid #eee; padding: 6px; text-align: left; }
+        .explanation { font-size: 0.75rem; line-height: 1.5; color: #777; padding-top: 15px; border-top: 1px solid #eee; }
+
+        @media print {
+            .btn-save, .btn-toggle, .btn-danger, .btn-util, #cycle-display { display: none !important; }
+            body { background: white; padding: 0; }
+            .card { box-shadow: none; border: 1px solid #ccc; border-radius: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="entry-view">
+        <h1>Daily Tracker</h1>
+        <div id="cycle-display" style="background:var(--lavender); padding: 5px 12px; border-radius:12px; font-size:0.8rem; margin-bottom:10px; display:inline-block; font-weight:600;">Calculating phase...</div>
+        <div class="card">
+            <select id="cycle_status">
+                <option value="No Flow">No Flow</option>
+                <option value="Flow">Flow (Period)</option>
+                <option value="Spotting">Spotting</option>
+            </select>
+            <label style="display: flex; align-items: center; gap: 10px; margin: 15px 0; background: #e0f2f1; padding: 12px; border-radius: 12px; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="is_day_one"> <strong>Today is Day 1 (Menses)</strong>
+            </label>
+            <div id="questions"></div>
+            <button class="btn-save" onclick="handleSubmission()">Save Entry</button>
+            <button class="btn-toggle" onclick="toggleView('trends-view')">View Insights</button>
+        </div>
+        
+        <button class="btn-danger" onclick="resetData()">Delete All Data</button>
+        <div class="explanation">
+            <strong>Data & Privacy:</strong> Your data is saved locally in browser storage. Use "Export CSV" to backup.
+        </div>
+    </div>
+
+    <div id="trends-view">
+        <h1>Insights</h1>
+        <div class="card">
+            <canvas id="symptomChart"></canvas>
+            <div style="font-size: 0.8rem; margin-top: 15px; text-align: center; color: #666;">
+                <span style="color:var(--emerald)">● Follicular</span> | <span style="color:var(--royal-purple)">● Luteal</span>
+            </div>
+        </div>
+        <button class="btn-save" style="background:var(--royal-purple)" onclick="toggleView('report-view')">View Clinic Report</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+            <button class="btn-util" onclick="exportCSV()">Export CSV</button>
+            <button class="btn-util" onclick="document.getElementById('csvInput').click()">Import CSV</button>
+        </div>
+        <input type="file" id="csvInput" style="display:none" accept=".csv" onchange="importCSV(event)">
+        <button class="btn-toggle" onclick="toggleView('entry-view')">Back to Entry</button>
+    </div>
+
+    <div id="report-view">
+        <h1>Clinic Report</h1>
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px;">
+                <div>
+                    <h3 style="margin:0;">Symptom Summary</h3>
+                    <p style="font-size: 0.7rem; color:#666; margin:0;">Prospective Tracking Analysis</p>
+                </div>
+                <div style="text-align:right;">
+                    <p style="font-size: 0.8rem; font-weight:bold; margin:0;">Patient Report</p>
+                    <p style="font-size: 0.7rem; margin:0;" id="report-gen-date"></p>
+                </div>
+            </div>
+
+            <div id="full-heatmap" class="heatmap-container"></div>
+            <table class="report-table">
+                <thead><tr><th>Domain</th><th>Foll. Avg</th><th>Lut. Avg</th><th>Δ Shift</th></tr></thead>
+                <tbody id="report-body"></tbody>
+            </table>
+            <div id="daily-log-container"></div>
+            <div class="explanation">
+                <strong>Logic Engine:</strong> Retrospective Re-alignment. Luteal phase defined as 14 days preceding menses.
+            </div>
+        </div>
+        <button class="btn-save" onclick="window.print()">Print / Save PDF</button>
+        <button class="btn-toggle" onclick="toggleView('trends-view')">Back</button>
+    </div>
+</div>
+
+<script>
+    // Updated symptom names to align exactly with DSM-5 / IAPMD criteria
+    const symptoms = [
+        "Depressed mood, hopelessness, self-deprecating thoughts",
+        "Anxiety, tension, keyed up, or on edge",
+        "Affective lability (mood swings, suddenly sad, sensitive)",
+        "Anger, irritability, or increased interpersonal conflicts",
+        "Decreased interest in usual activities",
+        "Subjective difficulty in concentrating",
+        "Lethargy, easy fatigability, or lack of energy",
+        "Appetite change (overeating, food cravings)",
+        "Hypersomnia or insomnia",
+        "Subjective sense of being overwhelmed/out of control",
+        "Physical symptoms (breast, headache, bloat, muscle pain)"
+    ];
+    
+    function getProcessedHistory() {
+        let history = JSON.parse(localStorage.getItem('pmd_data')) || [];
+        if (history.length === 0) return [];
+        history.sort((a, b) => new Date(a.date) - new Date(b.date));
+        const dayOneIndices = history.reduce((acc, curr, idx) => { if (curr.isDayOne) acc.push(idx); return acc; }, []);
+        let cycleLengths = [];
+        for (let i = 0; i < dayOneIndices.length - 1; i++) {
+            const len = Math.floor((new Date(history[dayOneIndices[i+1]].date) - new Date(history[dayOneIndices[i]].date)) / 864e5);
+            if (len > 15 && len < 50) cycleLengths.push(len);
+        }
+        const avgLen = cycleLengths.length > 0 ? (cycleLengths.reduce((a,b)=>a+b)/cycleLengths.length) : 28;
+
+        return history.map((entry, idx) => {
+            let nextDayOneIdx = dayOneIndices.find(d1 => d1 > idx);
+            let prevDayOneIdx = [...dayOneIndices].reverse().find(d1 => d1 <= idx);
+            let phase = "Follicular";
+            let cDay = prevDayOneIdx !== undefined ? Math.floor((new Date(entry.date) - new Date(history[prevDayOneIdx].date)) / 864e5) + 1 : 0;
+            if (nextDayOneIdx !== undefined) {
+                const daysToNext = Math.floor((new Date(history[nextDayOneIdx].date) - new Date(entry.date)) / 864e5);
+                phase = (daysToNext < 14) ? "Luteal" : "Follicular";
+            } else if (prevDayOneIdx !== undefined) {
+                const estNext = new Date(history[prevDayOneIdx].date);
+                estNext.setDate(estNext.getDate() + Math.round(avgLen));
+                const daysToEst = Math.floor((estNext - new Date(entry.date)) / 864e5);
+                phase = (daysToEst < 14) ? "Luteal" : "Follicular";
+            }
+            const avgScore = Object.values(entry.scores).reduce((a,b)=>a+b,0) / symptoms.length;
+            return { ...entry, phase, cycleDay: cDay, avgScore };
+        });
+    }
+
+    function updateCycleDisplay() {
+        const history = getProcessedHistory();
+        const display = document.getElementById('cycle-display');
+        if (history.length === 0) return;
+        const last = history[history.length - 1];
+        display.innerText = `Day ${last.cycleDay} (${last.phase} Phase)`;
+        display.style.color = last.phase === "Luteal" ? "var(--royal-purple)" : "var(--emerald)";
+    }
+
+    function renderChart() {
+        const history = getProcessedHistory();
+        if (history.length === 0) return;
+        const ctx = document.getElementById('symptomChart').getContext('2d');
+        if (window.pmdChart) window.pmdChart.destroy();
+        const labels = history.map(h => (h.cycleDay === 1 || h.cycleDay === 14) ? [h.date.split('-').slice(1).join('/'), `Day ${h.cycleDay}`] : h.date.split('-').slice(1).join('/'));
+        const boxes = history.map((h, idx) => ({ type: 'box', xMin: idx - 0.5, xMax: idx + 0.5, backgroundColor: h.phase === "Follicular" ? 'rgba(46,125,50,0.1)' : 'rgba(103,58,183,0.1)', borderWidth: 0 }));
+        window.pmdChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ data: history.map(h => h.avgScore.toFixed(1)), borderColor: '#444', tension: 0.1 }] }, options: { scales: { y: { min: 0, max: 6, title: {display: true, text: 'Average Symptom Severity'} } }, plugins: { legend: { display: false }, annotation: { annotations: boxes } } } });
+    }
+
+    function generateFullReport() {
+        const history = getProcessedHistory();
+        document.getElementById('report-gen-date').innerText = `Generated: ${new Date().toLocaleDateString()}`;
+        const heatContainer = document.getElementById('full-heatmap'); heatContainer.innerHTML = '';
+        for (let i = 0; i < history.length; i += 7) {
+            const row = document.createElement('div'); row.className = 'heat-row';
+            history.slice(i, i + 7).forEach(h => {
+                const item = document.createElement('div'); item.className = 'heat-item';
+                const cell = document.createElement('div'); cell.className = 'heat-cell';
+                cell.style.backgroundColor = `rgba(198, 40, 40, ${0.1 + ((h.avgScore) / 6) * 0.9})`;
+                cell.innerText = h.date.split('-').slice(1).join('/');
+                const line = document.createElement('div'); line.className = 'phase-line';
+                line.style.backgroundColor = h.phase === "Follicular" ? 'var(--emerald)' : 'var(--royal-purple)';
+                item.appendChild(cell); item.appendChild(line); row.appendChild(item);
+            });
+            heatContainer.appendChild(row);
+        }
+        const body = document.getElementById('report-body'); body.innerHTML = '';
+        symptoms.forEach(s => {
+            const f = history.filter(h => h.phase === "Follicular").map(h => h.scores[s]);
+            const l = history.filter(h => h.phase === "Luteal").map(h => h.scores[s]);
+            const fA = (f.reduce((a,b)=>a+b,0)/(f.length||1)).toFixed(1);
+            const lA = (l.reduce((a,b)=>a+b,0)/(l.length||1)).toFixed(1);
+            body.innerHTML += `<tr><td>${s}</td><td>${fA}</td><td>${lA}</td><td style="font-weight:bold; color:var(--royal-purple)">+${(lA-fA).toFixed(1)}</td></tr>`;
+        });
+        let dailyHtml = `<h3 style="margin-top:30px; font-size:1rem;">Daily Intensity Log</h3><table class="report-table"><thead><tr><th>Date</th><th>Phase</th><th>Avg Score</th></tr></thead><tbody>`;
+        history.forEach(h => {
+            dailyHtml += `<tr><td>${h.date}</td><td style="color:${h.phase==='Follicular'?'var(--emerald)':'var(--royal-purple)'}; font-weight:bold;">${h.phase}</td><td>${h.avgScore.toFixed(1)} / 6.0</td></tr>`;
+        });
+        dailyHtml += `</tbody></table>`;
+        document.getElementById('daily-log-container').innerHTML = dailyHtml;
+    }
+
+    function handleSubmission() {
+        const entryDate = new Date().toISOString().split('T')[0];
+        let data = JSON.parse(localStorage.getItem('pmd_data')) || [];
+        if (data.find(i => i.date === entryDate) && !confirm("Overwrite today?")) return;
+        const entry = { date: entryDate, isDayOne: document.getElementById('is_day_one').checked, scores: {} };
+        document.querySelectorAll('.symptom-input').forEach(input => { entry.scores[input.getAttribute('data-name')] = parseInt(input.value); });
+        data = data.filter(i => i.date !== entryDate); data.push(entry);
+        localStorage.setItem('pmd_data', JSON.stringify(data)); location.reload(); 
+    }
+
+    function toggleView(v) { document.querySelectorAll('.container > div').forEach(d => d.style.display = 'none'); document.getElementById(v).style.display = 'block'; if (v === 'trends-view') renderChart(); if (v === 'report-view') generateFullReport(); }
+    function resetData() { if (confirm("Erase history?")) { localStorage.clear(); location.reload(); } }
+    function exportCSV() {
+        const history = JSON.parse(localStorage.getItem('pmd_data')) || [];
+        let csv = "Date,IsDayOne," + symptoms.join(",") + "\n";
+        history.forEach(h => { let row = [h.date, h.isDayOne]; symptoms.forEach(s => row.push(h.scores[s] || 0)); csv += row.join(",") + "\n"; });
+        const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `PMD_History.csv`; a.click();
+    }
+    function importCSV(e) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const lines = evt.target.result.split("\n"); const newData = [];
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i]) continue; const cols = lines[i].split(",");
+                const entry = { date: cols[0], isDayOne: cols[1] === "true", scores: {} };
+                symptoms.forEach((s, idx) => entry.scores[s] = parseInt(cols[idx + 2])); newData.push(entry);
+            }
+            localStorage.setItem('pmd_data', JSON.stringify(newData)); location.reload();
+        }; reader.readAsText(e.target.files[0]);
+    }
+
+    // Fixed Symptom generation loop with 0-6 range and clear labels
+    const qContainer = document.getElementById('questions');
+    symptoms.forEach(s => {
+        const div = document.createElement('div'); div.className = 'slider-container';
+        div.innerHTML = `
+            <label style="font-weight:bold; font-size:0.8rem; color:var(--deep-lavender)">${s}</label>
+            <input type="range" class="symptom-input" data-name="${s}" min="0" max="6" value="0" step="1">
+            <div class="ticks"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="scale-ref"><span>0 (None)</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6 (Severe)</span></div>`;
+        qContainer.appendChild(div);
+    });
+    updateCycleDisplay();
+</script>
+</body>
+</html>
